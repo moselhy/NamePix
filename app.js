@@ -2,12 +2,14 @@ const express = require('express');
 const multer = require('multer');
 const ejs = require('ejs');
 const path = require('path');
+const app = express();
+const watson = require('watson-developer-cloud');
 
 // Set Storage Engine
 const storage = multer.diskStorage({
   destination: './public/uploads/',
   filename: function(req, file, cb){
-    cb(null,file.fieldname + '-' + Date.now() + path.extname(file.originalname));
+    cb(null,file.originalname);
   }
 });
 
@@ -23,7 +25,7 @@ const upload = multer({
 // Check File Type
 function checkFileType(file, cb){
   // Allowed ext
-  const filetypes = /jpeg|jpg|png|gif/;
+  const filetypes = /jpeg|jpg|png|gif|bmp/;
   // Check ext
   const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
   // Check mime
@@ -36,8 +38,6 @@ function checkFileType(file, cb){
   }
 }
 
-// Init app
-const app = express();
 
 // EJS
 app.set('view engine', 'ejs');
@@ -58,16 +58,72 @@ app.post('/upload', (req, res) => {
         res.render('index', {
           msg: 'Error: No File Selected!'
         });
-      } else {
-        res.render('index', {
-          msg: 'File Uploaded!',
-          file: `uploads/${req.file.filename}`
-        });
+      } else {        // Say what it is
+          var fs = require('fs');
+
+          var visual_recognition = watson.visual_recognition({
+            api_key: '8d7aced8efa9ce11cca985d203dce5989cc20148',
+            version: 'v3',
+            version_date: '2016-05-20'
+          });
+
+          let filepath = `./public/uploads/${req.file.filename}`;
+          var params = {
+            images_file: fs.createReadStream(filepath)
+          };
+
+          visual_recognition.classify(params, function(err2, res2) {
+            if (err2){
+            console.log(err2);
+            }
+            else {
+              var query = res2;
+              var word = highest(query);
+
+              res.render('index', {
+                msg: `${word}`,
+                file: `uploads/${req.file.filename}`
+                // file: `uploads/${req.file.filename}`
+              });
+              // res.send(word);
+            }
+          });
+
+
       }
     }
   });
 });
 
-const port = 3000;
+const port = 80;
 
 app.listen(port, () => console.log(`Server started on port ${port}`));
+
+
+
+// Watson function
+function highest(query){
+  // array of class, score, type_hierarchy
+  var classes = query["images"][0]['classifiers'][0]['classes'];
+  // make array of scores
+  var scores = [];
+  for (var i = 0; i < classes.length; i++){
+    scores.push(classes[i]['score'])
+  }
+  var max = -1;
+  var maxIndex = -1;
+  for (var i = 0; i < scores.length; i++){
+    if (scores[i] > max && numWords(classes[i]['class']) == 1){
+      max = scores[i];
+      maxIndex = i;
+    }
+  }
+
+  var maxClass = classes[maxIndex]['class'];
+
+  return maxClass;
+}
+
+function numWords(s){
+  return s.split(' ').length;
+}
